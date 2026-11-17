@@ -1,6 +1,18 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: AWS-study Template
 
+Parameters:
+  DBMasterUsername:
+    Type: String
+    Default: admin
+    Description: Master username for RDS MySQL
+  DBMasterUserPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    MaxLength: 41
+    Description: Master password for RDS MySQL (min 8 chars)
+
 Resources:
 
   cfnVPC:
@@ -34,7 +46,25 @@ Resources:
       Tags:
         - Key: Name
           Value: aws-study-subnet1c
+  cfnSubnetPrivate1a:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref cfnVPC
+      CidrBlock: 10.0.11.0/24
+      AvailabilityZone: ap-northeast-1a
+      Tags:
+        - Key: Name
+          Value: aws-study-subnet-private-1a
 
+  cfnSubnetPrivate1c:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref cfnVPC
+      CidrBlock: 10.0.12.0/24
+      AvailabilityZone: ap-northeast-1c
+      Tags:
+        - Key: Name
+          Value: aws-study-subnet-private-1c
   cfnInternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
@@ -54,7 +84,7 @@ Resources:
       VpcId: !Ref cfnVPC
       Tags:
         - Key: Name
-          Value: aws-study-route
+          Value: aws-study-route-public
 
   cfnRouteInternet:
     Type: AWS::EC2::Route
@@ -83,10 +113,6 @@ Resources:
       GroupDescription: AWS Study EC2
       VpcId: !Ref cfnVPC
       SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          CidrIp: 0.0.0.0/0
         - IpProtocol: tcp
           FromPort: 8080
           ToPort: 8080
@@ -122,7 +148,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: AWS Study ELB
-      VpcId: !Ref cfnVPC # 使用するVPCのIDを指定
+      VpcId: !Ref cfnVPC 
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
@@ -156,21 +182,22 @@ Resources:
   # RDS
   cfnRDS:
     Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
     Properties:
       AllocatedStorage: 20
       AllowMajorVersionUpgrade: false
       AutoMinorVersionUpgrade: true
       DBInstanceClass: db.t4g.micro
       Port: 3306
-      StorageType: gp2
+      StorageType: gp3
       BackupRetentionPeriod: 1
-      MasterUsername: admin
-      MasterUserPassword: true
+      MasterUsername: !Ref DBMasterUsername
+      MasterUserPassword: !Ref DBMasterUserPassword
       PreferredBackupWindow: 15:00-16:00
       PreferredMaintenanceWindow: sun:18:00-sun:19:00
       DBName: awsstudy
       Engine: mysql
-      EngineVersion: "8.4.11"
+      EngineVersion: "8.0.41"
       LicenseModel: general-public-license
       DBSubnetGroupName: !Ref cfnDBSubnetGroup
       VPCSecurityGroups:
@@ -178,14 +205,14 @@ Resources:
       Tags:
         - Key: Name
           Value: aws-study-rds
-
+      
   cfnDBSubnetGroup:
     Type: AWS::RDS::DBSubnetGroup
     Properties:
       DBSubnetGroupDescription: Created from CloudFormation
       SubnetIds:
-        - !Ref cfnSubnetAZ1a
-        - !Ref cfnSubnetAZ1c
+        - !Ref cfnSubnetPrivate1a
+        - !Ref cfnSubnetPrivate1c
       Tags:
         - Key: Name
           Value: aws-study-db-subnet-group
