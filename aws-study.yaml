@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: AWS-study Template
-
+# CloudFormation template for AWS study
 Resources:
 
   cfnVPC:
