@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: AWS-study Template
-# CloudFormation template for AWS study
+
 Resources:
 
   cfnVPC:
@@ -87,12 +87,6 @@ Resources:
           FromPort: 80
           ToPort: 80
           CidrIp: 0.0.0.0/0
-
-        - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: 0.0.0.0/0
-
         - IpProtocol: tcp
           FromPort: 8080
           ToPort: 8080
@@ -125,11 +119,22 @@ Resources:
         - Key: Name
           Value: aws-study-securityGroup-rds
 
+  cfnElbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for ELB
+      VpcId: !Ref cfnVPC # 使用するVPCのIDを指定
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          
   # EC2 (Amazon Linux 2023, t2.micro)
   cfnEC2:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: amazon/al2023-ami-2023.12.20261102.0-kernel-6.18-x86_64
+      ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}'
       InstanceType: t2.micro
       SubnetId: !Ref cfnSubnetAZ1a
       DisableApiTermination: false
@@ -185,7 +190,7 @@ Resources:
       Scheme: internet-facing
       Type: application
       SecurityGroups:
-        - !Ref cfnSecurityGroupEC2
+        - !Ref cfnSecurityGroupELB
       Subnets:
         - !Ref cfnSubnetAZ1a
         - !Ref cfnSubnetAZ1c
