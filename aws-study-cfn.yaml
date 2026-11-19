@@ -200,7 +200,7 @@ Resources:
       PreferredMaintenanceWindow: sun:18:00-sun:19:00
       DBName: awsstudy
       Engine: mysql
-      EngineVersion: "8.0.41"
+      EngineVersion: "8.0"
       LicenseModel: general-public-license
       DBSubnetGroupName: !Ref cfnDBSubnetGroup
       VPCSecurityGroups:
