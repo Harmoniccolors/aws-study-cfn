@@ -351,7 +351,7 @@ Resources:
       AlarmActions:
         - !Ref cfnAlertSNSTopic
 
-    cfnALBUnHealthyHostAlarm:
+  cfnALBUnHealthyHostAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: aws-study-alb-unhealthy-hosts
