@@ -1,0 +1,372 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS-study Template
+
+Parameters:
+  DBMasterUsername:
+    Type: String
+    Default: admin
+    Description: Master username for RDS MySQL
+  DBMasterUserPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    MaxLength: 41
+    Description: Master password for RDS MySQL (min 8 chars)
+  AlertEmailAddress:
+    Type: String
+    Description: Email address for CloudWatch Alarm notifications
+
+Resources:
+
+  cfnVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: aws-study-vpc
+
+  cfnSubnetAZ1a:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref cfnVPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: ap-northeast-1a
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: aws-study-subnet1a
+
+  cfnSubnetAZ1c:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref cfnVPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: ap-northeast-1c
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: aws-study-subnet1c
+  cfnSubnetPrivate1a:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref cfnVPC
+      CidrBlock: 10.0.11.0/24
+      AvailabilityZone: ap-northeast-1a
+      Tags:
+        - Key: Name
+          Value: aws-study-subnet-private-1a
+
+  cfnSubnetPrivate1c:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref cfnVPC
+      CidrBlock: 10.0.12.0/24
+      AvailabilityZone: ap-northeast-1c
+      Tags:
+        - Key: Name
+          Value: aws-study-subnet-private-1c
+  cfnInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: aws-study-gw
+
+  cfnGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref cfnVPC
+      InternetGatewayId: !Ref cfnInternetGateway
+
+  cfnRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref cfnVPC
+      Tags:
+        - Key: Name
+          Value: aws-study-route-public
+
+  cfnRouteInternet:
+    Type: AWS::EC2::Route
+    DependsOn: cfnGatewayAttachment
+    Properties:
+      RouteTableId: !Ref cfnRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref cfnInternetGateway
+
+  cfnRouteLocal1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref cfnRouteTable
+      SubnetId: !Ref cfnSubnetAZ1a
+
+  cfnRouteLocal2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref cfnRouteTable
+      SubnetId: !Ref cfnSubnetAZ1c
+
+  # Security Group
+  cfnSecurityGroupEC2:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: AWS Study EC2
+      VpcId: !Ref cfnVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref cfnElbSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+      Tags:
+        - Key: Name
+          Value: aws-study-securityGroup-ec2
+
+  cfnSecurityGroupRDS:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: AWS Study RDS
+      VpcId: !Ref cfnVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref cfnSecurityGroupEC2
+
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+      Tags:
+        - Key: Name
+          Value: aws-study-securityGroup-rds
+
+  cfnElbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: AWS Study ELB
+      VpcId: !Ref cfnVPC 
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: aws-study-securityGroup-elb
+          
+  # EC2 (Amazon Linux 2023, t3.micro)
+  cfnEC2:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}'
+      InstanceType: t3.micro
+      SubnetId: !Ref cfnSubnetAZ1a
+      DisableApiTermination: false
+      InstanceInitiatedShutdownBehavior: stop
+      KeyName: awsstudyv2
+      Monitoring: false
+      SecurityGroupIds:
+        - !Ref cfnSecurityGroupEC2
+
+      Tags:
+        - Key: Name
+          Value: aws-study-ec2
+
+  # RDS
+  cfnRDS:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    Properties:
+      AllocatedStorage: 20
+      AllowMajorVersionUpgrade: false
+      AutoMinorVersionUpgrade: true
+      DBInstanceClass: db.t4g.micro
+      Port: 3306
+      StorageType: gp3
+      BackupRetentionPeriod: 1
+      MasterUsername: !Ref DBMasterUsername
+      MasterUserPassword: !Ref DBMasterUserPassword
+      PreferredBackupWindow: 15:00-16:00
+      PreferredMaintenanceWindow: sun:18:00-sun:19:00
+      DBName: awsstudy
+      Engine: mysql
+      EngineVersion: "8.0"
+      LicenseModel: general-public-license
+      DBSubnetGroupName: !Ref cfnDBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref cfnSecurityGroupRDS
+      Tags:
+        - Key: Name
+          Value: aws-study-rds
+      
+  cfnDBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Created from CloudFormation
+      SubnetIds:
+        - !Ref cfnSubnetPrivate1a
+        - !Ref cfnSubnetPrivate1c
+      Tags:
+        - Key: Name
+          Value: aws-study-db-subnet-group
+  # ELB
+  cfnELB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: aws-study-elb
+      Scheme: internet-facing
+      Type: application
+      SecurityGroups:
+        - !Ref cfnElbSecurityGroup
+      Subnets:
+        - !Ref cfnSubnetAZ1a
+        - !Ref cfnSubnetAZ1c
+      LoadBalancerAttributes:
+        - Key: access_logs.s3.enabled
+          Value: "true"
+        - Key: access_logs.s3.bucket
+          Value: !Ref cfnALBLogBucket
+        - Key: access_logs.s3.prefix
+          Value: alb-logs
+      Tags:
+        - Key: Name
+          Value: aws-study-elb
+
+  cfnELBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: aws-study-elb-target-group
+      Port: 8080
+      Protocol: HTTP
+      VpcId: !Ref cfnVPC
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      HealthCheckTimeoutSeconds: 5
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      HealthCheckPort: traffic-port
+      HealthCheckIntervalSeconds: 10
+      Matcher:
+        HttpCode: 200
+
+      Targets:
+        - Id: !Ref cfnEC2
+          Port: 8080
+
+      Tags:
+        - Key: Name
+          Value: aws-study-elb-target-group
+
+  cfnELBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref cfnELB
+      DefaultActions:
+        - TargetGroupArn: !Ref cfnELBTargetGroup
+          Type: forward
+      Port: 80
+      Protocol: HTTP 
+
+  # ログ保管用 S3バケット (ALBアクセスログ)
+  cfnALBLogBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      # アカウントIDとリージョンを含めてバケット名のグローバル一意性を確保
+      BucketName: !Sub "aws-study-alb-logs-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldLogsAfter30Days
+            Status: Enabled
+            ExpirationInDays: 30
+      Tags:
+        - Key: Name
+          Value: aws-study-alb-logs
+
+  cfnALBLogBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref cfnALBLogBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              # ap-northeast-1 (東京リージョン) のELBサービスアカウントID
+              AWS: arn:aws:iam::582318560864:root
+            Action: s3:PutObject
+            Resource: !Sub "${cfnALBLogBucket.Arn}/alb-logs/AWSLogs/${AWS::AccountId}/*"
+          
+  # CloudWatch Logs (アプリケーション/システムログ)
+  cfnAppLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/ec2/aws-study-app
+      RetentionInDays: 14   
+
+  # SNS (アラーム通知先)
+  cfnAlertSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: aws-study-alert-topic
+      DisplayName: AWS-Study-Alert
+
+  cfnAlertSNSSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref cfnAlertSNSTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmailAddress
+  
+  # CloudWatch Alarms (EC2 / ALB 監視)
+  cfnEC2CPUUtilizationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: aws-study-ec2-high-cpu
+      AlarmDescription: "EC2のCPU使用率が80%を超えました"
+      Namespace: AWS/EC2
+      MetricName: CPUUtilization
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref cfnEC2
+      AlarmActions:
+        - !Ref cfnAlertSNSTopic
+
+  cfnALBUnHealthyHostAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: aws-study-alb-unhealthy-hosts
+      AlarmDescription: "ALB配下のターゲットがUnHealthyになりました"
+      Namespace: AWS/ApplicationELB
+      MetricName: UnHealthyHostCount
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: TargetGroup
+          Value: !GetAtt cfnELBTargetGroup.TargetGroupFullName
+        - Name: LoadBalancer
+          Value: !GetAtt cfnELB.LoadBalancerFullName
+      AlarmActions:
+        - !Ref cfnAlertSNSTopic
